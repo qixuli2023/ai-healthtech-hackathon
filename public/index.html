@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Habit video analyser</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">AI health POC</p>
+      <h1>What’s happening in your video?</h1>
+      <p class="intro">Upload a short video and get a visual-only description of the activity. Speech is intentionally ignored.</p>
+
+      <form id="analysis-form">
+        <label class="upload" for="video">
+          <span>Select a short video</span>
+          <small>MP4, MOV, or WebM · up to 30 MB</small>
+          <input id="video" name="video" type="file" accept="video/*" required />
+        </label>
+        <p id="file-name" class="file-name" aria-live="polite"></p>
+        <button id="submit-button" type="submit">Describe video</button>
+      </form>
+
+      <section id="result" class="result" hidden aria-live="polite">
+        <p class="eyebrow">Visual summary</p>
+        <p id="analysis"></p>
+      </section>
+
+      <p id="status" class="status" aria-live="polite"></p>
+      <p class="privacy">For this prototype, uploaded media is deleted from Runware after the analysis request finishes. Do not upload sensitive real patient footage.</p>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
