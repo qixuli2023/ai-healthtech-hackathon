@@ -50,6 +50,10 @@ h2 { font-size: 1.35rem; font-weight: 500; line-height: 1.2; }
 .outline-button:hover, .reply-button:hover, .tiny-button:hover { box-shadow: 2px 2px 0 var(--ink); transform: translate(-1px, -1px); }
 
 .topline { align-items: center; display: flex; justify-content: space-between; margin-bottom: 31px; }
+.topline .wordmark { margin-bottom: 0; }
+.header-links { align-items: center; display: flex; gap: 12px; }
+.heart-notification { background: var(--paper); border: var(--line); border-radius: 50%; cursor: pointer; font-size: 1.1rem; height: 28px; line-height: 1; padding: 0; position: relative; width: 28px; }
+.notification-count { align-items: center; background: var(--paper); border: var(--line); border-radius: 50%; display: flex; font-size: .58rem; font-weight: 700; height: 15px; justify-content: center; position: absolute; right: -7px; top: -7px; width: 15px; }
 .time-toggle { display: inline-flex; border: var(--line); border-radius: 999px; overflow: hidden; }
 .time-toggle button { border: 0; padding: 7px 9px; font-size: .73rem; }
 .time-toggle button + button { border-left: var(--line); }
@@ -70,11 +74,43 @@ h2 { font-size: 1.35rem; font-weight: 500; line-height: 1.2; }
 .feedback { min-height: 42px; font-size: .84rem; line-height: 1.4; margin: 18px 3px 0; }
 .source-note { border-top: var(--line); font-size: .78rem; line-height: 1.4; margin: 38px 0 0; padding-top: 14px; }
 
+.companion-screen { display: flex; flex-direction: column; min-height: 730px; }
+.companion-screen h2 { font-size: 1.55rem; margin: 6px 0 24px; }
+.conversation { display: grid; gap: 13px; width: 100%; }
+.companion-invite { border: var(--line); border-radius: 4px 16px 16px 16px; font-size: .95rem; line-height: 1.42; margin: 0; padding: 12px 13px; width: fit-content; }
+.chat-row { display: flex; width: 100%; }
+.chat-row.companion { justify-content: flex-start; padding-right: 42px; }
+.chat-row.user { justify-content: flex-end; padding-left: 42px; }
+.chat-bubble { background: var(--paper); border: var(--line); font-size: .95rem; line-height: 1.42; margin: 0; padding: 12px 13px; position: relative; width: fit-content; }
+.chat-row.companion .chat-bubble { border-radius: 4px 16px 16px 16px; }
+.chat-row.user .chat-bubble { border-radius: 16px 4px 16px 16px; }
+.chat-row.companion .chat-bubble::after { border-bottom: 7px solid transparent; border-right: 8px solid var(--ink); content: ""; left: -9px; position: absolute; top: -1px; }
+.chat-row.user .chat-bubble::after { border-bottom: 7px solid transparent; border-left: 8px solid var(--ink); content: ""; position: absolute; right: -9px; top: -1px; }
+.companion-status { font-size: .75rem; line-height: 1.4; margin: 15px 0 0; min-height: 18px; }
+.companion-compose { display: flex; gap: 8px; margin-top: 10px; }
+.companion-compose input { background: var(--paper); border: var(--line); border-radius: 999px; flex: 1; font-size: .82rem; min-width: 0; padding: 10px 12px; }
+.companion-compose .outline-button { font-size: .76rem; padding: 8px 12px; }
+.companion-fallback-note { border-left: var(--line); font-size: .74rem; line-height: 1.4; margin: 14px 0 0; padding-left: 8px; }
+.companion-footer { display: flex; justify-content: flex-end; margin-top: auto; padding-top: 25px; }
+.companion-footer .text-button { font-size: .75rem; }
+
 .recording-button { align-items: center; border-radius: 12px; display: flex; gap: 9px; justify-content: center; padding: 14px; width: 100%; }
 .record-dot { border: var(--line); border-radius: 50%; display: inline-block; height: 12px; width: 12px; }
 .recording-button.is-recording .record-dot { background: var(--ink); }
 .paused-note { border: var(--line); font-size: .88rem; margin: 14px 0; padding: 11px; text-align: center; }
 .timeline-intro { font-size: .87rem; line-height: 1.45; margin: 22px 0; }
+.timeline-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.timeline-actions .outline-button { font-size: .76rem; padding: 8px 10px; }
+.video-status { font-size: .76rem; line-height: 1.4; margin: 12px 0 0; }
+.video-error { border-left: var(--line); font-size: .76rem; line-height: 1.4; margin: 8px 0 0; padding-left: 8px; }
+.uploaded-section { border-top: var(--line); margin-top: 25px; padding-top: 15px; }
+.uploaded-summary { font-size: .84rem; line-height: 1.4; margin: 8px 0 0; }
+.uploaded-timeline { margin-top: 18px; }
+.timeline-uncertainty { font-size: .76rem; font-style: italic; line-height: 1.4; margin: 16px 0 0; }
+.timeline-footer { display: flex; justify-content: flex-end; margin-top: 34px; }
+.timeline-footer .text-button { font-size: .72rem; }
+.timeline-screen { display: flex; flex-direction: column; min-height: 730px; }
+.timeline-screen .timeline-footer { margin-top: auto; }
 .timeline { border-left: var(--line); list-style: none; margin: 27px 0 0 12px; padding: 0 0 0 20px; }
 .timeline-item { margin-bottom: 22px; position: relative; }
 .timeline-item::before { background: var(--paper); border: var(--line); border-radius: 50%; content: ""; height: 8px; left: -25px; position: absolute; top: 5px; width: 8px; }
