@@ -1,13 +1,16 @@
 const app = document.querySelector('#app');
-const storageKey = 'quietly-demo-state';
+const storageKey = 'quietly-demo-state-v3';
+const MAX_VIDEO_BYTES = 30 * 1024 * 1024;
+const USE_EVENING_REFLECTION_LLM = false;
 let sourceDay;
+let reflectionRequestId = 0;
 
 // Clear state created by earlier demo versions so the latest onboarding is shown.
 localStorage.removeItem('quietly-demo-state-v1');
 localStorage.removeItem('quietly-demo-state-v2');
 
 const iconByType = {
-  wake: '⌁', commute: '↗', breakfast: '◒', snack: '◇', lunch: '⊹', drink: '◌', errand: '□', evening: '☾'
+  wake: '⌁', commute: '↗', breakfast: '◒', snack: '◇', lunch: '⊹', drink: '◌', errand: '□', evening: '☾', other: '◦'
 };
 
 const companionTurns = [
@@ -28,12 +31,17 @@ async function initialise() {
     saveState(defaultState());
   } else {
     const saved = JSON.parse(savedState);
+    const shouldRetryReflection = saved.isGeneratingReflection && Array.isArray(saved.uploadedEvents) && saved.uploadedEvents.length;
     saveState({
       ...defaultState(),
       ...saved,
       companionSessionTurns: Array.isArray(saved.companionSessionTurns) ? saved.companionSessionTurns : [],
       uploadedUncertainties: Array.isArray(saved.uploadedUncertainties) ? saved.uploadedUncertainties : [],
+      uploadedAcknowledgements: Array.isArray(saved.uploadedAcknowledgements) ? saved.uploadedAcknowledgements : [],
+      isAnalysingVlog: false,
+      isGeneratingReflection: false,
     });
+    if (shouldRetryReflection) setTimeout(() => { refreshUploadedReflection(); }, 0);
   }
   render();
 }
@@ -54,6 +62,8 @@ function defaultState() {
     uploadedEvents: null,
     uploadedSummary: '',
     uploadedUncertainties: [],
+    uploadedAcknowledgements: [],
+    isGeneratingReflection: false,
     isAnalysingVlog: false,
     videoStatus: '',
     videoError: '',
@@ -80,9 +90,9 @@ function render() {
 function renderOnboarding(current) {
   app.innerHTML = `
     <section class="screen onboarding">
-      <span class="wordmark">quietly</span>
-      <h1>What would you like to feel a bit better about?</h1>
-      <p class="soft-copy">No pressure. Just the small things that matter to you.</p>
+      <span class="wordmark">Feel Good</span>
+      <h1>An AI companion for staying the course.</h1>
+      <p class="soft-copy">Feel Good notices the good you did, offers gentle nudges, and stays with you when things feel hard—never pushing, always at your pace.</p>
       <span class="choice-label">What type of chronic condition are you experiencing?</span>
       <div class="chips" id="conditions">
         ${['Obesity', 'Cardiovascular', 'Diabetes and metabolic', 'Cancer'].map((condition) => conditionChip(condition, current.conditions.includes(condition))).join('')}
@@ -107,7 +117,7 @@ function renderToday(current) {
   app.innerHTML = `
     <section class="screen">
       <div class="topline">
-        <span class="wordmark">quietly</span>
+        <span class="wordmark">Feel Good</span>
         <div class="header-links">
           <button class="heart-notification" data-action="open-companion" aria-label="Open Companion conversation">♡${current.companionSeen ? '' : '<span class="notification-count">1</span>'}</button>
           <button class="text-button" data-route="timeline">today I saw…</button>
@@ -134,7 +144,7 @@ function renderCompanion(current) {
   app.innerHTML = `
     <section class="screen companion-screen">
       <div class="topline">
-        <span class="wordmark">quietly</span>
+        <span class="wordmark">Feel Good</span>
         <button class="text-button" data-route="today">back to today</button>
       </div>
       <p class="eyebrow">companion</p>
@@ -153,13 +163,7 @@ function morningCard(current) {
   if (current.dismissedMorning) {
     return `<article class="index-card"><span class="card-kicker">A quiet morning</span><p class="card-copy">No lunch ideas from me today. Your call ☺</p></article>`;
   }
-  const hasLunchPattern = current.events.some((event) => event.type === 'lunch');
-  const favourite = current.prefs.likes.find((like) => like === 'ramen') || current.prefs.likes[0];
-  const goalHint = 'Take it at your own pace.';
-  const opener = current.tone === 'Cheerful' ? 'A small idea for today:' : current.tone === 'Straight-talking' ? 'One easy option today:' : 'Today, you might enjoy…';
-  const copy = hasLunchPattern
-    ? `${opener} if lunch is out, that ${favourite} place is your kind of thing — with a little walk if it feels good. ${goalHint}`
-    : `${opener} keep it close to the things you already like. ${goalHint}`;
+  const copy = 'Today, keep it simple: choose one small thing that helps you feel a little more like yourself.';
   return `<article class="index-card">
     <span class="card-kicker">Morning</span>
     <p class="card-copy">${copy}</p>
@@ -172,14 +176,20 @@ function morningCard(current) {
 }
 
 function eveningCard(current) {
-  const goodEvents = current.events.filter((event) => event.good).slice(0, 3);
+  const hasUploadedTimeline = Array.isArray(current.uploadedEvents);
+  const goodEvents = hasUploadedTimeline
+    ? current.uploadedAcknowledgements
+    : current.events.filter((event) => event.good).slice(0, 3);
   const closer = current.tone === 'Cheerful' ? 'that all counts ☺' : current.tone === 'Straight-talking' ? 'quiet wins.' : 'nice one ☺';
+  if (hasUploadedTimeline && current.isGeneratingReflection) {
+    return `<article class="index-card"><span class="card-kicker">Evening</span><p class="card-copy">Looking back at the moments you chose to keep…</p></article>`;
+  }
   if (!goodEvents.length) {
     return `<article class="index-card"><span class="card-kicker">Evening</span><p class="card-copy">Nothing to add tonight. Just your day, as it was.</p></article>`;
   }
   return `<article class="index-card">
-    <span class="card-kicker">Today you quietly…</span>
-    <ul class="praise-list">${goodEvents.map((event) => `<li>▸ ${event.text}</li>`).join('')}</ul>
+    <span class="card-kicker">Today, you…</span>
+    <ul class="praise-list">${goodEvents.map((event) => `<li>▸ ${escapeHtml(event.praise || event.text)}</li>`).join('')}</ul>
     <p class="warm-close">${closer}</p>
     <div class="reply-row"><button class="reply-button heart" data-reply="thanks" aria-label="Thanks">♡</button></div>
   </article>`;
@@ -189,7 +199,7 @@ function renderTimeline(current) {
   const hasUploadedTimeline = Array.isArray(current.uploadedEvents);
   app.innerHTML = `
     <section class="screen timeline-screen">
-      <div class="topline"><span class="wordmark">quietly</span><button class="text-button" data-route="today">back to today</button></div>
+      <div class="topline"><span class="wordmark">Feel Good</span><button class="text-button" data-route="today">back to today</button></div>
       <h2>Today I saw…</h2>
       <button class="recording-button ${current.recording ? 'is-recording' : ''}" data-action="recording">
         <span class="record-dot"></span>${current.recording ? 'Recording' : 'Paused'}
@@ -252,8 +262,10 @@ document.addEventListener('click', (event) => {
   if (target.dataset.deleteUpload !== undefined) {
     mutate((current) => {
       current.uploadedEvents.splice(Number(target.dataset.deleteUpload), 1);
-      current.videoStatus = 'That vlog moment is gone.';
+      current.uploadedAcknowledgements = [];
+      current.videoStatus = 'That vlog moment is gone. Refreshing your reflection…';
     });
+    refreshUploadedReflection();
     return;
   }
   if (target.dataset.reply) {
@@ -281,7 +293,10 @@ document.addEventListener('click', (event) => {
   if (target.dataset.action === 'upload-video') { document.querySelector('#video-upload').click(); return; }
   if (target.dataset.action === 'show-demo') { mutate((current) => { current.showDemoTimeline = !current.showDemoTimeline; }); return; }
   if (target.dataset.action === 'reset-day') { saveState(defaultState()); location.hash = 'today'; return; }
-  if (target.dataset.action === 'regenerate') { mutate((current) => { current.feedback = 'Cards refreshed from the moments still here.'; }); }
+  if (target.dataset.action === 'regenerate') {
+    if (Array.isArray(state().uploadedEvents)) refreshUploadedReflection();
+    else mutate((current) => { current.feedback = 'Cards refreshed from the moments still here.'; });
+  }
 });
 
 document.addEventListener('submit', (event) => {
@@ -302,7 +317,7 @@ async function analyseVlog(file) {
     mutate((current) => { current.videoError = 'Please choose a video file.'; });
     return;
   }
-  if (file.size > 30 * 1024 * 1024) {
+  if (file.size > MAX_VIDEO_BYTES) {
     mutate((current) => { current.videoError = 'Please choose a vlog smaller than 30 MB.'; });
     return;
   }
@@ -329,10 +344,12 @@ async function analyseVlog(file) {
       current.uploadedEvents = payload.timeline.events;
       current.uploadedSummary = payload.timeline.overall_activity;
       current.uploadedUncertainties = payload.timeline.uncertainties;
+      current.uploadedAcknowledgements = [];
       current.isAnalysingVlog = false;
-      current.videoStatus = 'Your vlog timeline is ready.';
+      current.videoStatus = 'Your vlog timeline is ready. Preparing your evening reflection…';
       current.videoError = '';
     });
+    await refreshUploadedReflection();
   } catch (error) {
     mutate((current) => {
       current.isAnalysingVlog = false;
@@ -344,13 +361,89 @@ async function analyseVlog(file) {
   }
 }
 
+async function refreshUploadedReflection() {
+  const current = state();
+  const events = Array.isArray(current.uploadedEvents) ? current.uploadedEvents : [];
+  const requestId = ++reflectionRequestId;
+
+  if (!events.length) {
+    mutate((next) => {
+      next.uploadedAcknowledgements = [];
+      next.isGeneratingReflection = false;
+      next.videoStatus = 'No vlog moments remain for an evening reflection.';
+    });
+    return;
+  }
+
+  if (!USE_EVENING_REFLECTION_LLM) {
+    mutate((next) => {
+      next.uploadedAcknowledgements = hardcodedUploadedAcknowledgements(events);
+      next.isGeneratingReflection = false;
+      next.videoStatus = 'Your vlog timeline is ready.';
+      next.videoError = '';
+    });
+    return;
+  }
+
+  mutate((next) => {
+    next.uploadedAcknowledgements = [];
+    next.isGeneratingReflection = true;
+    next.videoStatus = 'Preparing your evening reflection…';
+  });
+
+  let timeoutId;
+  try {
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => { controller.abort(); }, 45_000);
+    const response = await fetch('/api/evening-card', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ events }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    timeoutId = undefined;
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to prepare an evening reflection.');
+    if (requestId !== reflectionRequestId) return;
+
+    mutate((next) => {
+      next.uploadedAcknowledgements = Array.isArray(payload.acknowledgements) ? payload.acknowledgements : [];
+      next.isGeneratingReflection = false;
+      next.videoStatus = 'Your vlog timeline is ready.';
+      next.videoError = '';
+    });
+  } catch (error) {
+    if (requestId !== reflectionRequestId) return;
+    mutate((next) => {
+      next.uploadedAcknowledgements = [];
+      next.isGeneratingReflection = false;
+      next.videoStatus = 'Your vlog timeline is ready.';
+      next.videoError = error.message || 'Unable to prepare an evening reflection.';
+    });
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+function hardcodedUploadedAcknowledgements(events) {
+  const acknowledgements = [];
+  const breakfastEvent = events.findIndex((event) => /\b(milk|refrigerator|fridge|bowl|pouring)\b/i.test(event.text));
+  const dumbbellEvent = events.findIndex((event) => /\bdumbbell\b/i.test(event.text));
+
+  if (breakfastEvent >= 0) acknowledgements.push({ event_index: breakfastEvent, text: 'You made a healthy start by preparing breakfast for yourself.' });
+  if (dumbbellEvent >= 0) acknowledgements.push({ event_index: dumbbellEvent, text: 'You picked up your dumbbell and made time to move — a strong way to begin the day.' });
+
+  return acknowledgements;
+}
+
 async function sendCompanionMessage(text) {
   const message = text.trim();
   if (!message) return;
 
   mutate((current) => {
     current.companionSessionTurns.push({ role: 'user', text: message });
-    current.companionStatus = 'quietly is listening…';
+    current.companionStatus = 'Feel Good is listening…';
   });
 
   try {

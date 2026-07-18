@@ -1,4 +1,4 @@
-# Quietly demo
+# Feel Good demo
 
 This is a vanilla HTML/CSS/JavaScript hackathon demo. It can run fully offline with the bundled `data/day.json`, or analyse an uploaded vlog with Runware when a local API key is configured.
 
@@ -20,5 +20,9 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000). `Upload vlog` sends a video to the local API, which uploads it temporarily to Runware, builds a visual-only clip-relative timeline, then requests deletion of the temporary media. Companion chat also uses Runware for a short, session-only text conversation; if it cannot connect, it shows the bundled scripted demo exchange instead.
+
+### Video upload requirements
+
+Keep the vlog below 30 MB, which is the maximum accepted by the analysis provider. For a reliable demo, compress the video to roughly 11,000 KB (about 11 MB) before uploading.
 
 The demo starts with a small onboarding screen. `Today I saw…` exposes the source moments for the cards and lets the presenter delete one; regenerate the cards to show that only remaining observed moments can be praised.

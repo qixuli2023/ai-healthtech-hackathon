@@ -11,4 +11,8 @@ Minimal Runware integration for a hackathon POC. A user uploads a short video an
 
 The server uploads the selected video to Runware media storage, asks `google:gemini@3.5-flash` for a visual-only description, then requests deletion of the temporary upload.
 
-Keep demonstration videos brief and below 30 MB. This is not a medical device and should not be used with real patient footage.
+## Video upload requirements
+
+- Keep videos below 30 MB; this is the maximum accepted by the analysis provider.
+- For a reliable demo, compress the clip to roughly 11,000 KB (about 11 MB) before uploading.
+- Keep clips brief. This is not a medical device and should not be used with real patient footage.

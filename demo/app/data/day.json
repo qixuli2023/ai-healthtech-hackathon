@@ -5,13 +5,14 @@
   },
   "events": [
     { "time": "07:40", "type": "wake", "text": "woke up", "good": false },
-    { "time": "08:12", "type": "commute", "text": "took the stairs at the station", "good": true },
-    { "time": "08:35", "type": "breakfast", "text": "made breakfast at home", "good": true },
+    { "time": "08:12", "type": "commute", "text": "took the stairs at the station", "good": false },
+    { "time": "08:35", "type": "breakfast", "text": "made breakfast at home", "good": false },
     { "time": "10:30", "type": "snack", "text": "salt & vinegar crisps, small bag", "good": false },
-    { "time": "13:05", "type": "lunch", "text": "cooked at home instead of ordering in", "good": true },
-    { "time": "15:20", "type": "drink", "text": "flat white, second of the day", "good": false },
-    { "time": "17:50", "type": "errand", "text": "picked up groceries on the way home", "good": false },
-    { "time": "18:40", "type": "commute", "text": "walked the long way home", "good": true },
+    { "time": "13:05", "type": "lunch", "text": "had lunch out", "good": false },
+    { "time": "15:20", "type": "snack", "text": "picked yoghurt and berries for an afternoon snack", "good": true, "praise": "You chose yoghurt and berries for your afternoon snack — a thoughtful pick." },
+    { "time": "17:50", "type": "other", "text": "30 minutes of movement at home", "good": true, "praise": "You made time for 30 minutes of movement today — a lovely bit of time for yourself." },
+    { "time": "18:40", "type": "commute", "text": "walked home", "good": false },
+    { "time": "19:30", "type": "evening", "text": "cooked dinner at home", "good": true, "praise": "You cooked dinner at home this evening — a quiet win." },
     { "time": "20:15", "type": "evening", "text": "watched TV on the sofa", "good": false }
   ]
 }

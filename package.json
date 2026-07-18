@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --env-file-if-exists=.env server.js",
-    "start": "node --env-file-if-exists=.env server.js"
+    "dev": "node server.js",
+    "start": "node server.js"
   },
   "dependencies": {
-    "@runware/sdk": "^1.6.7"
+    "@runware/sdk": "^1.6.7",
+    "dotenv": "^16.4.7"
   }
 }

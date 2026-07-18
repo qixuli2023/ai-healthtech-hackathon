@@ -1,10 +1,16 @@
 import { createClient } from '@runware/sdk';
+import { config as loadEnv } from 'dotenv';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { extname, join, normalize } from 'node:path';
+import { dirname, extname, join, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const serverDirectory = dirname(fileURLToPath(import.meta.url));
+loadEnv({ path: join(serverDirectory, '.env') });
 
 const PORT = Number(process.env.PORT ?? 3000);
-const MAX_BODY_BYTES = 40 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 30 * 1024 * 1024;
+const MAX_BODY_BYTES = Math.ceil(MAX_VIDEO_BYTES * 4 / 3) + 1024 * 1024;
 const publicDirectory = join(process.cwd(), 'demo', 'app');
 const activityTypes = ['wake', 'commute', 'breakfast', 'snack', 'lunch', 'drink', 'errand', 'evening', 'other'];
 const companionSystemPrompt = `You are a quiet companion a person can talk to in a single moment of hesitation.
@@ -34,6 +40,7 @@ themselves, STOP. Do not counsel. Respond with warmth and immediately offer to c
 with a real person or a helpline. Never try to handle a crisis yourself.`;
 const distressPattern = /\b(kill myself|end my life|want to die|suicid(?:e|al)|self[- ]?harm|hurt myself|no reason to live|cannot go on)\b/i;
 const forbiddenCompanionReply = /\b(health|weight|medical|condition|calorie|healthier|unhealthy|diet|exercise|i recommend|i suggest|you should|you could|try to)\b/i;
+const forbiddenAcknowledgement = /\b(health|weight|medical|condition|calorie|healthier|unhealthy|diet|diagnos(?:e|is)|you should|you could|i recommend|i suggest|don['’]?t)\b/i;
 
 const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -72,32 +79,6 @@ function readJson(request) {
   });
 }
 
-const timelineSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['overall_activity', 'events', 'uncertainties'],
-  properties: {
-    overall_activity: { type: 'string' },
-    events: {
-      type: 'array',
-      maxItems: 10,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['start_seconds', 'end_seconds', 'type', 'text', 'confidence'],
-        properties: {
-          start_seconds: { type: 'integer', minimum: 0 },
-          end_seconds: { type: 'integer', minimum: 0 },
-          type: { type: 'string', enum: activityTypes },
-          text: { type: 'string', minLength: 1, maxLength: 160 },
-          confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
-        },
-      },
-    },
-    uncertainties: { type: 'array', items: { type: 'string' }, maxItems: 5 },
-  },
-};
-
 function validateTimeline(data) {
   if (!data || typeof data !== 'object' || !Array.isArray(data.events)) {
     throw new Error('Runware returned an invalid timeline. Please try another short vlog.');
@@ -122,6 +103,39 @@ function validateTimeline(data) {
       ? data.uncertainties.filter((item) => typeof item === 'string').map((item) => item.trim().slice(0, 180)).filter(Boolean).slice(0, 5)
       : [],
   };
+}
+
+function validateReflectionEvents(events) {
+  if (!Array.isArray(events) || events.length > 10) {
+    throw new Error('The vlog timeline is not valid.');
+  }
+
+  return events.map((event) => ({
+    start_seconds: Number.isInteger(event?.start_seconds) ? Math.max(0, event.start_seconds) : 0,
+    end_seconds: Number.isInteger(event?.end_seconds) ? Math.max(0, event.end_seconds) : 0,
+    type: activityTypes.includes(event?.type) ? event.type : 'other',
+    text: typeof event?.text === 'string' ? event.text.trim().slice(0, 160) : '',
+    confidence: ['high', 'medium', 'low'].includes(event?.confidence) ? event.confidence : 'low',
+  })).filter((event) => event.text);
+}
+
+function validateAcknowledgements(data, events) {
+  const acknowledgements = Array.isArray(data?.acknowledgements) ? data.acknowledgements : [];
+  const usedIndexes = new Set();
+
+  return acknowledgements
+    .filter((item) => Number.isInteger(item?.event_index) && item.event_index >= 0 && item.event_index < events.length)
+    .map((item) => ({ event_index: item.event_index, text: typeof item.text === 'string' ? item.text.trim().slice(0, 220) : '' }))
+    .filter((item) => item.text && !forbiddenAcknowledgement.test(item.text) && !usedIndexes.has(item.event_index) && usedIndexes.add(item.event_index))
+    .slice(0, 3);
+}
+
+function parseAcknowledgementLines(text, events) {
+  const acknowledgements = String(text ?? '').split('\n').map((line) => {
+    const match = line.trim().match(/^(\d+)\s*\|\s*(.+)$/);
+    return match ? { event_index: Number(match[1]), text: match[2] } : null;
+  }).filter(Boolean);
+  return validateAcknowledgements({ acknowledgements }, events);
 }
 
 function validateCompanionTurns(turns) {
@@ -178,6 +192,44 @@ async function continueCompanion(turns) {
   return { handoff: false, reply };
 }
 
+async function createEveningReflection(events) {
+  const cleanEvents = validateReflectionEvents(events);
+  if (!cleanEvents.length) return [];
+  if (!process.env.RUNWARE_API_KEY) {
+    throw new Error('RUNWARE_API_KEY is missing.');
+  }
+
+  const client = await createClient({
+    apiKey: process.env.RUNWARE_API_KEY,
+    transport: 'rest',
+    timeout: 30_000,
+  });
+  const [result] = await client.run({
+    model: 'google:gemini@3.5-flash',
+    settings: {
+      temperature: 0.45,
+      maxTokens: 500,
+      thinkingLevel: 'off',
+    },
+    messages: [{
+      role: 'user',
+      content: [
+        'Return zero to three lines only, with no heading, bullets, Markdown, or extra text.',
+        'Write each line exactly as: event_index | one warm, factual sentence.',
+        'If nothing qualifies, return exactly: NONE.',
+        'Choose zero to three numbered events and write one short, warm, concrete sentence for each. Ground every sentence only in its event.',
+        'Use specific, varied wording; never use generic praise such as “It is wonderful to see”, “great job”, or “well done”.',
+        'Only acknowledge visible movement, food preparation, a food choice, or gentle preparation such as getting a dumbbell ready.',
+        'Never call preparation a completed workout. Exclude weighing, medication, pets, and computer use.',
+        'Do not infer duration, intent, outcomes, calories, portions, or comparisons. Do not mention health, weight, medical matters, diet, healthy or unhealthy choices, or give advice.',
+        `Timeline: ${JSON.stringify(cleanEvents.map((event, index) => ({ event_index: index, ...event })))}.`,
+      ].join(' '),
+    }],
+  });
+
+  return parseAcknowledgementLines(result.text, cleanEvents);
+}
+
 async function analyseVideo(videoDataUri) {
   if (!process.env.RUNWARE_API_KEY) {
     throw new Error('RUNWARE_API_KEY is missing. Add it to your .env file and restart the server.');
@@ -196,31 +248,19 @@ async function analyseVideo(videoDataUri) {
 
   try {
     const [result] = await client.run({
-      taskType: 'textInference',
       model: 'google:gemini@3.5-flash',
       inputs: { videos: [uploaded.mediaURL] },
-      outputFormat: 'JSON',
-      jsonSchema: timelineSchema,
-      settings: {
-        systemPrompt: [
-          'You extract a concise, visual-only timeline from a personal vlog.',
-          'Inspect the full video and return only activities, objects, and context that are visibly observable.',
-          'Ignore all spoken words and audio.',
-          'Use clip-relative seconds for every event; do not invent time-of-day.',
-          'Group contiguous activity into at most 10 non-overlapping, salient events.',
-          'Use only the provided activity types; use other when none fit.',
-          'Do not identify people or infer diagnoses, health status, emotions, calories, portion sizes, exercise intensity, or other sensitive attributes.',
-          'Do not label events good, bad, healthy, or unhealthy. Put uncertainty in uncertainties.',
-        ].join(' '),
-        temperature: 0.2,
-        maxTokens: 1800,
-      },
-      providerSettings: { google: { mediaResolution: 'high' } },
       messages: [{
         role: 'user',
-        content: 'Create the requested structured visual activity timeline for this vlog. Base every event on visible evidence only.',
+        content: [
+          'Inspect this vlog and return only a valid JSON object, with no Markdown or extra text.',
+          'Use exactly this shape:',
+          '{"overall_activity":"brief visual-only summary","events":[{"start_seconds":0,"end_seconds":0,"type":"wake|commute|breakfast|snack|lunch|drink|errand|evening|other","text":"visible event","confidence":"high|medium|low"}],"uncertainties":["optional visual uncertainty"]}.',
+          'Use clip-relative seconds, inspect visible evidence only, ignore audio, and return at most 10 events.',
+          'Do not identify people or infer health, emotions, calories, portion sizes, or exercise intensity.',
+        ].join(' '),
       }],
-    }, { validate: false });
+    });
 
     const structured = typeof result.text === 'string' ? JSON.parse(result.text) : result.text;
     return validateTimeline(structured);
@@ -261,6 +301,18 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === 'POST' && url.pathname === '/api/evening-card') {
+    try {
+      const { events } = await readJson(request);
+      const acknowledgements = await createEveningReflection(events);
+      sendJson(response, 200, { acknowledgements });
+    } catch (error) {
+      console.error(error);
+      sendJson(response, 500, { error: error.message || 'Unable to prepare an evening reflection.' });
+    }
+    return;
+  }
+
   if (request.method !== 'GET') {
     response.writeHead(405).end();
     return;
@@ -284,5 +336,5 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Quietly demo running at http://localhost:${PORT}`);
+  console.log(`Feel Good demo running at http://localhost:${PORT}`);
 });
